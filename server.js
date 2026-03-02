@@ -12,13 +12,11 @@ app.post("/webhook/product-update", async (req, res) => {
   const product = req.body;
 
   try {
-    // Fetch metafields
+    // 1️⃣ Get metafields
     const metafieldRes = await axios.get(
       `https://${SHOP}/admin/api/2024-01/products/${product.id}/metafields.json`,
       {
-        headers: {
-          "X-Shopify-Access-Token": ACCESS_TOKEN,
-        },
+        headers: { "X-Shopify-Access-Token": ACCESS_TOKEN },
       }
     );
 
@@ -30,36 +28,38 @@ app.post("/webhook/product-update", async (req, res) => {
 
     const urls = JSON.parse(imageSet.value);
 
-    const mediaInputs = urls.map((url) => ({
-      originalSource: typeof url === "string" ? url : url.href,
-      mediaContentType: "IMAGE",
-    }));
-
-    const mutation = `
-      mutation productCreateMedia($media: [CreateMediaInput!]!, $productId: ID!) {
-        productCreateMedia(media: $media, productId: $productId) {
-          media { status }
-          mediaUserErrors { message }
-        }
-      }
-    `;
-
-    await axios.post(
-      `https://${SHOP}/admin/api/2024-01/graphql.json`,
+    // 2️⃣ Get existing product media
+    const mediaRes = await axios.get(
+      `https://${SHOP}/admin/api/2024-01/products/${product.id}/images.json`,
       {
-        query: mutation,
-        variables: {
-          productId: `gid://shopify/Product/${product.id}`,
-          media: mediaInputs,
-        },
-      },
-      {
-        headers: {
-          "X-Shopify-Access-Token": ACCESS_TOKEN,
-          "Content-Type": "application/json",
-        },
+        headers: { "X-Shopify-Access-Token": ACCESS_TOKEN },
       }
     );
+
+    // 3️⃣ Delete all existing images
+    for (const image of mediaRes.data.images) {
+      await axios.delete(
+        `https://${SHOP}/admin/api/2024-01/products/${product.id}/images/${image.id}.json`,
+        {
+          headers: { "X-Shopify-Access-Token": ACCESS_TOKEN },
+        }
+      );
+    }
+
+    // 4️⃣ Add new images
+    for (const url of urls) {
+      await axios.post(
+        `https://${SHOP}/admin/api/2024-01/products/${product.id}/images.json`,
+        {
+          image: {
+            src: typeof url === "string" ? url : url.href,
+          },
+        },
+        {
+          headers: { "X-Shopify-Access-Token": ACCESS_TOKEN },
+        }
+      );
+    }
 
     res.sendStatus(200);
   } catch (error) {
